@@ -61,7 +61,7 @@ For my purpose, the cos(&alpha;) value is fully sufficient. It is:
 
 Angles &gt; 90 deg. are irrelvant &ndash; a face in shadow is simply dark.
 
-Hence, the result of (normal &cdot; light) is simply multiplied with the color value.
+Hence, the result of (normal &middot; light) is simply multiplied with the color value.
 
 ### Shading
 

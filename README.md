@@ -97,7 +97,7 @@ This value is multiplied with the width (u) or height (v), casted to `unsigned i
 ## Optimization Attempts
 
 While developing and testing, it became very obvious to me that optimization pays off best in the most inner loops of the `RenderContext::rasterize()` (i.e. the two iterations over x).
-(Unfortunately, I cannot remember the title of the book where I read this nor the author but I memorized it as a good rule of thumb: &ldquo;If you try to optimize then optimize the most inner loops and leave any other loop as is.&rqduo;)
+(Unfortunately, I cannot remember the title of the book where I read this nor the author but I memorized it as a good rule of thumb: &ldquo;If you try to optimize then optimize the most inner loops and leave any other loop as is.&rdquo;)
 Therefore, I intended to remove branches from this most inner loops as most as possible.
 According to the different rendering modes, there are still certain options which might be enabled or disabled.
 Therefore, I made all these options as template parameters of `rasterize()`.

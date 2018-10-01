@@ -11,6 +11,8 @@ This was inspired by a Stack Overflow question [software rasterization implement
 
 might cost.
 
+<!-- @todo teaser: animated GIF of application snapshots -->
+
 So, I prepared this project.
 
 It appears to be less useful nowadays where nearly every computer (incl. smartphones) seems to have a GPU.
@@ -23,12 +25,6 @@ So, I came to the idea that it might be funny to do this again as if there were 
 transformation of coordinates into screen space
 
 transformation of normals into view space
-
-## Rasterizer
-
-<!-- take description and image from stackoverflow -->
-
-interpolation of coordinates
 
 ### Lighting
 
@@ -63,6 +59,43 @@ Angles &gt; 90 deg. are irrelvant &ndash; a face in shadow is simply dark.
 
 Hence, the result of (normal &middot; light) is simply multiplied with the color value.
 
+The fixed-pipe OpenGL engine supports additional lighting effects like:
+
+- specular lighting
+- point lights.
+
+For now, I ignored this.
+I got the impression that the absence of these things covers quite good the weakness of Gouraud shading.
+
+## Rasterizer
+
+When the rasterizer is called vertex coordinates are already transformed into screen space.
+
+### Interpolation of Coordinates
+
+This means
+
+- x coordinate of a visible pixel must be in the range \[0, width)
+- y coordinate of a visible pixel must be in the range \[0, height)
+- z coordinate might be considered for depth buffering / depth test.
+
+The `RenderContext::rasterize()` function has to fill horizontal screen lines. For this, I sort the 3 triangle vertices by their y components. In regular case, this allows to cut the triangle horizontally into two parts:
+
+- the upper with peak above of horizontal base
+- the lower with peak below of horizontal base.
+
+The horizontal base is on one end the middle vertex, on the other end the horizontally project point on the line from top to bottom vertex. For this constructed vertex, the color and texture coordinates are interpolated according to the ratio (y<sub>M</sub> - y<sub>T</sub>) / (y<sub>B</sub> - y<sub>M</sub>).
+
+![Sketch of interpolation in RenderContext::rasterize()](https://i.stack.imgur.com/j9sdu.png)
+
+Border cases like
+
+- y<sub>T</sub> = y<sub>M</sub>
+- y<sub>M</sub> = y<sub>B</sub> or even
+- y<sub>T</sub> = y<sub>M</sub> = y<sub>B</sub>
+
+are simply covered by tests which may skip the upper, lower, or even both parts.
+
 ### Shading
 
 As the lighting calculations are applied to the vertex colors, there is no distinction between
@@ -71,11 +104,16 @@ As the lighting calculations are applied to the vertex colors, there is no disti
 - shading (modification of vertex colors according to lighting).
 
 If smooth rasterization is enabled (`RenderContext::Smooth`) pixel colors are interpolated for each pixel (x, y).
-If lighting is enabled additionally (`RenderContext::Lighting`) vertex colors are pre-modified according to angle of corresponding vertex normals and light vector.
 
-(Lighting enabled while smooth rasterization disabled simply has no effect.)
+If lighting is enabled additionally (`RenderContext::Lighting`) vertex colors are pre-modified according to angle of corresponding vertex normals and light vector. (This is done prior to rasterizing.)
 
-### Texture Filtering
+Lighting enabled while smooth rasterization results in flat shading. (This makes the demo sphere similar looking like a golf ball.)
+
+In modern OpenGL (with GLSL), lighting can be done per pixel. This allows there natural looking effects.
+In my case, it would require expensive calculations in the most inner loops of `RenderContext::rasterize()`.
+If I understood it right, this was the actual intention of the OP in [software rasterization implementation speed up ideas](https://stackoverflow.com/a/52534685/7478597) where he complained about the miserable frame rate. I believe a per-pixel lighting is simply too heavy for a software renderer (at least if a multi frame-per-second rate is intended).
+
+### Texturing
 
 OpenGL provides various texture filtering options whereby two situations are distinguished:
 
@@ -87,7 +125,7 @@ Respectively, OpenGL supports
 - magnification filters and
 - minification filters.
 
-For best performance, I didn't implement any filtering. Thus, in both situations the nearest texel is chosen.
+For best performance, I didn't implement any texture filtering. Thus, in both situations the nearest texel is chosen.
 This means the U-V coordinates (associated two vertices) are simply interpolated.
 
 The interpolated U-V coordinates are used with my overloaded `Texture::operator[]`.
@@ -108,3 +146,6 @@ Afterwards, `RenderContext::drawVertex()` computes the table index `i` combining
 Thus, the conditions which appear inside of `RenderContext::rasterize()` are actually resolved outside.
 
 <!-- @todo mention Bresenham? -->
+
+<!-- @todo ## Some Measured Values -->
+

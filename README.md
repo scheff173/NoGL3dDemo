@@ -11,9 +11,9 @@ This was inspired by a Stack Overflow question [software rasterization implement
 
 might cost.
 
-<!-- @todo teaser: animated GIF of application snapshots -->
-
 So, I prepared this project.
+
+![Teaser (sequence of snapshots)](./snap-NoGL3d.gif)
 
 It appears to be less useful nowadays where nearly every computer (incl. smartphones) seems to have a GPU.
 On the other hand, such things (which I still learned and practiced while I was studying at University) are usually under the hood &ndash; at best, somebody can imagine how it may work.
@@ -22,9 +22,9 @@ So, I came to the idea that it might be funny to do this again as if there were 
 
 ## Renderer
 
-transformation of coordinates into screen space
+@todo transformation of coordinates into screen space
 
-transformation of normals into view space
+@todo transformation of normals into view space
 
 ### Lighting
 

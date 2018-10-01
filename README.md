@@ -2,7 +2,21 @@
 
 (If you ask &ldquo;Why?&rdquo; you missed the point.)
 
-This was inspired by a Stack Overflow question
+This was inspired by a Stack Overflow question [software rasterization implementation speed up ideas](https://stackoverflow.com/a/52534685/7478597). In the answer I provided, I left out any color interpolation to gain the maximum speed. So, I became curious about how much certain options like
+
+- color interpolation
+- depth buffering / testing
+- texture mapping
+- lighting
+
+might cost.
+
+So, I prepared this project.
+
+It appears to be less useful nowadays where nearly every computer (incl. smartphones) seems to have a GPU.
+On the other hand, such things (which I still learned and practiced while I was studying at University) are usually under the hood &ndash; at best, somebody can imagine how it may work.
+
+So, I came to the idea that it might be funny to do this again as if there were no GPU &ndash; for my own joy and education and, may be, for somebody else too who is curious about this.
 
 ## Renderer
 

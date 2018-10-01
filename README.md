@@ -31,11 +31,11 @@ the most simple (and most ugly) form of lighting calculation I know but also the
 
 Thereby, the angle of normal to light vector is evaluated.
 
-cos(&alpha;) = (normal &cdot; light) / (|normal| &cdot; |light|)
+cos(&alpha;) = (normal &middot; light) / (|normal| &middot; |light|)
 
 Assuming that `normal` as well as `light` should be normalized, this simplifies to
 
-cos(&alpha;) = (normal &cdot; light)
+cos(&alpha;) = (normal &middot; light)
 
 The nice fact about this is that it's not necessary to call the &ldquo;expensive&rdquo; `acos()` in this calculation.
 For my purpose, the cos(&alpha;) value is fully sufficient. It is:
@@ -88,7 +88,7 @@ Therefore, I intended to remove branches from this most inner loops as most as p
 According to the different rendering modes, there are still certain options which might be enabled or disabled.
 Therefore, I made all these options as template parameters of `rasterize()`.
 Hence, when `rasterize()` is compiled all these conditions check constant values, and a modern compiler should simply remove the `if()` check where the body is compiled in or left out depending on condition.
-So, I need a &ldquo;flavor of&rdqou; `RenderContext::rasterize()` for every possible combination of template arguments.
+So, I need a &ldquo;flavor of&rdquo; `RenderContext::rasterize()` for every possible combination of template arguments.
 This is found in `RenderContext::drawVertex()` where I made an array `rasterizes[]` initialized with template function instances iterated through every combination of possible template argument values.
 Afterwards, `RenderContext::drawVertex()` computes the table index `i` combining all relevant modes accordingly.
 Thus, the conditions which appear inside of `RenderContext::rasterize()` are actually resolved outside.

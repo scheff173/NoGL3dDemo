@@ -20,6 +20,22 @@ On the other hand, such things (which I still learned and practiced while I was 
 
 So, I came to the idea that it might be funny to do this again as if there were no GPU &ndash; for my own joy and education and, may be, for somebody else too who is curious about this.
 
+## Build Application
+
+To build the sources, I prepared a Qt project file. On [cygwin64](http://www.cygwin.org), I simply did:
+
+    $ qtmake-qt5 qNoGL3dDemo.pro
+    
+    $ make
+    
+    $ ./qNoGL3dDemo
+
+There is also a `CMakeLists.txt` file which I used to make a VisualStudio solution. (I debugged and tested in VS2013.) I had to comment the `find_package(Qt5Widgets CONFIG REQUIRED)`. On my side, Qt5 is ready configured by a `CMakeLists.txt` file in parent directory. It might be necessary to uncomment this line.
+
+I must admit that the version built with cygwin runs fine until I try to make navigation in the 3d widget, and then crashs immediately. I tried to debug it with `gdb` but wasn't even able to get a stack trace. I'm not sure whether this is caused by my application or just something which doesn't work stable in cygwin/Qt.
+
+The debug and release versions, I built with VS2013 run stable on my side without any problems.
+
 ## Renderer
 
 The `RenderContext::render()` function has to called to render 3d contents into the frame buffer of the `RenderContext`. Actually, this does nothing else than calling the render callback which has to be installed before:

@@ -18,11 +18,11 @@ So, I prepared this project.
 It appears to be less useful nowadays where nearly every computer (incl. smartphones) seems to have a GPU.
 On the other hand, such things (which I still learned and practiced while I was studying at University) are usually under the hood &ndash; at best, somebody can imagine how it may work.
 
-So, I came to the idea that it might be funny to do this again as if there were no GPU &ndash; for my own joy and education and, may be, for somebody else too who is curious about this.
+So, I came to the idea that it might be funny to do this again as if there were no GPU &ndash; for my own joy and education and, may be, for somebody else's too who is curious about this.
 
 ## Build Application
 
-To build the sources, I prepared a Qt project file. On [cygwin64](http://www.cygwin.org), I simply did:
+To build the sources, I prepared a Qt project file. On [cygwin64](http://www.cygwin.org), I built the application with:
 
     $ qtmake-qt5 qNoGL3dDemo.pro
     
@@ -30,7 +30,7 @@ To build the sources, I prepared a Qt project file. On [cygwin64](http://www.cyg
     
     $ ./qNoGL3dDemo
 
-There is also a `CMakeLists.txt` file which I used to make a VisualStudio solution. (I debugged and tested in VS2013.) I had to comment the `find_package(Qt5Widgets CONFIG REQUIRED)`. On my side, Qt5 is ready configured by a `CMakeLists.txt` file in parent directory. It might be necessary to uncomment this line.
+There is also a `CMakeLists.txt` file which I used to make a VisualStudio solution. (I debugged and tested in VS2013.) I had to comment the `find_package(Qt5Widgets CONFIG REQUIRED)`. On my side, Qt5 is ready configured by a `CMakeLists.txt` file in the parent directory. It might be necessary to uncomment this line.
 
 I must admit that the version built with cygwin runs fine until I try to make navigation in the 3d widget, and then crashs immediately. I tried to debug it with `gdb` but wasn't even able to get a stack trace. I'm not sure whether this is caused by my application or just something which doesn't work stable in cygwin/Qt.
 
@@ -38,13 +38,13 @@ The debug and release versions, I built with VS2013 run stable on my side withou
 
 ## Renderer
 
-The `RenderContext::render()` function has to called to render 3d contents into the frame buffer of the `RenderContext`. Actually, this does nothing else than calling the render callback which has to be installed before:
+The `RenderContext::render()` function has to be called to render the 3d contents into the frame buffer of the `RenderContext`. Actually, this does nothing else than calling the render callback which has to be installed before:
 
     void render() { _cbRender(*this); }
 
 The render callback may call the various methods to change internal states of the `RenderContext` including one of the most important: `RenderContext::drawVertex()`.
 
-Each call of `RenderContext::drawVertex()` adds a vertex to an internal buffer. It collects vertices until 3 vertices are available to rasterize a triangle. With the 3<sup>rd</sup> vertex, the internal vertex buffer is processed with `RenderContext::rasterize()` and cleared.
+Each call of `RenderContext::drawVertex()` adds a vertex to an internal buffer. It collects vertices until 3 vertices are available to rasterize a triangle. With the 3<sup>rd</sup> vertex, the internal vertex buffer is processed with `RenderContext::rasterize()` and cleared afterwards.
 
 The triangle vertex coordinates are transformed into screen space by multiplying with the MVPS matrix.
 
@@ -67,7 +67,7 @@ The colors of rasterized vertices are simply interpolated.
 This is called [Gouraud-Shading](https://en.wikipedia.org/wiki/Gouraud_shading) &ndash;
 the most simple (and most ugly) form of lighting calculation I know but also the one with the least performance impact.
 
-Thereby, the angle of normal to light vector is evaluated.
+Thereby, the angle of vertex normal to light vector is evaluated.
 
 cos(&alpha;) = (normal &middot; light) / (|normal| &middot; |light|)
 
@@ -78,12 +78,12 @@ cos(&alpha;) = (normal &middot; light)
 The nice fact about this is that it's not necessary to call the &ldquo;expensive&rdquo; `acos()` in this calculation.
 For my purpose, the cos(&alpha;) value is fully sufficient. It is:
 
-- 1 if `normal` and `light` are identical (i.e. sun shines vertical onto face)
-- between 0 and 1 for angle of `normal` and `light` &lt; 90 deg.
+- 1 if `normal` and `light` are identical (i.e. sun shines upright onto face)
+- between 0 and 1 for angle of `normal` and `light` &lt; 90&deg;.
 - 0 if `normal` and `light` are orthogonal (i.e. sun shines along face)
-- &lt; 0 for angle of `normal` and `light` &gt; 90 deg.
+- &lt; 0 for angle of `normal` and `light` &gt; 90&deg;.
 
-Angles &gt; 90 deg. are irrelvant &ndash; a face in shadow is simply dark.
+Angles &gt; 90&deg; are irrelvant &ndash; a face in the shadow is simply dark.
 
 Hence, the result of (normal &middot; light) is simply multiplied with the color value.
 
@@ -93,7 +93,7 @@ The fixed-pipe OpenGL engine supports additional lighting effects like:
 - point lights.
 
 For now, I ignored this.
-I got the impression that the absence of these things covers quite good the weakness of Gouraud shading.
+I got the impression that the absence of these things hides quite good the weakness of Gouraud shading.
 
 ## Rasterizer
 
@@ -112,7 +112,7 @@ The `RenderContext::rasterize()` function has to fill horizontal screen lines. F
 - the upper with peak above of horizontal base
 - the lower with peak below of horizontal base.
 
-The horizontal base is on one end the middle vertex, on the other end the horizontally project point on the line from top to bottom vertex. For this constructed vertex, the color and texture coordinates are interpolated according to the ratio (y<sub>M</sub> - y<sub>T</sub>) / (y<sub>B</sub> - y<sub>M</sub>).
+The horizontal base is delimited on one end by the middle vertex, on the other end by the horizontally projected point on the line from top to bottom vertex. For this constructed vertex, the color and texture coordinates are interpolated according to the ratio (y<sub>M</sub> - y<sub>T</sub>) / (y<sub>B</sub> - y<sub>M</sub>).
 
 ![Sketch of interpolation in RenderContext::rasterize()](https://i.stack.imgur.com/j9sdu.png)
 
@@ -131,11 +131,11 @@ As the lighting calculations are applied to the vertex colors, there is no disti
 - color interpolation (interpolating pixel colors according to the distance of this pixel to the vertices and their associated colors)
 - shading (modification of vertex colors according to lighting).
 
-If smooth rasterization is enabled (`RenderContext::Smooth`) pixel colors are interpolated for each pixel (x, y).
+If smooth rendering is enabled (`RenderContext::Smooth`) pixel colors are interpolated for each pixel (x, y).
 
 If lighting is enabled additionally (`RenderContext::Lighting`) vertex colors are pre-modified according to angle of corresponding vertex normals and light vector. (This is done prior to rasterizing.)
 
-Lighting enabled while smooth rasterization results in flat shading. (This makes the demo sphere similar looking like a golf ball.)
+Lighting enabled while smooth rendering disabled results in flat shading. (This makes the demo sphere similar looking like a golf ball.)
 
 In modern OpenGL (with GLSL), lighting can be done per pixel. This allows there natural looking effects.
 In my case, it would require expensive calculations in the most inner loops of `RenderContext::rasterize()`.
@@ -154,7 +154,7 @@ Respectively, OpenGL supports
 - minification filters.
 
 For best performance, I didn't implement any texture filtering. Thus, in both situations the nearest texel is chosen.
-This means the U-V coordinates (associated two vertices) are simply interpolated.
+This means the U-V coordinates (associated to vertices) are simply interpolated.
 
 The interpolated U-V coordinates are used with my overloaded `Texture::operator[]`.
 It subtracts the integer part from the floating point value yielding the decimals (effectively a value in range [0, 1]).

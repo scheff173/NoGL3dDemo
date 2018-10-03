@@ -26,6 +26,8 @@ So, I came to the idea that it might be funny to do this again as if there were 
 
 @todo transformation of normals into view space
 
+![Transformations for coordinates to screen space](./Sketch-mat.png)
+
 ### Lighting
 
 This is the most simple kind of lighting which is imaginable:

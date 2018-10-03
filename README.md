@@ -22,11 +22,21 @@ So, I came to the idea that it might be funny to do this again as if there were 
 
 ## Renderer
 
-@todo transformation of coordinates into screen space
+The `RenderContext::render()` function has to called to render 3d contents into the frame buffer of the `RenderContext`. Actually, this does nothing else than calling the render callback which has to be installed before:
 
-@todo transformation of normals into view space
+    void render() { _cbRender(*this); }
+
+The render callback may call the various methods to change internal states of the `RenderContext` including one of the most important: `RenderContext::drawVertex()`.
+
+Each call of `RenderContext::drawVertex()` adds a vertex to an internal buffer. It collects vertices until 3 vertices are available to rasterize a triangle. With the 3<sup>rd</sup> vertex, the internal vertex buffer is processed with `RenderContext::rasterize()` and cleared.
+
+The triangle vertex coordinates are transformed into screen space by multiplying with the MVPS matrix.
+
+The MVPS matrix represents the model space &rarr; world space &rarr; view space &rarr; screen space transformation. I'd like to mention that using 4&times;4 matrices for transformations allows to concatenate transformations by multiplying their matrices. Finally, they can be applied to every vertex at once &ndash; a trick which is very common in 3d computer graphics.
 
 ![Transformations for coordinates to screen space](./Sketch-mat.png)
+
+These transformations are similar to OpenGL. Song Ho Ahn published a nice introduction into this topic: [OpenGL Transformation](http://www.songho.ca/opengl/gl_transform.html).
 
 ### Lighting
 

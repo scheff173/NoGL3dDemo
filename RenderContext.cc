@@ -92,8 +92,7 @@ void RenderContext::drawVertex(const Vec3f &coord)
 {
   assert(_nVtcs < 3);
   { Vertex &vtx = _vtcs[_nVtcs];
-    const Mat4x4f matMVP
-      = _matProj * _matView * _matModel;
+    const Mat4x4f matMVP = _matProj * _matView * _matModel;
     vtx.coord = transformPoint(matMVP, coord);
     vtx.normal = transformVec(_matModel, _normal);
     vtx.color = _color; vtx.texCoord = _texCoord;

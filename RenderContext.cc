@@ -52,7 +52,7 @@ RenderContext::RenderContext(uint width, uint height):
   _ambient(0.2f),
   _mode(1 << FrontSide),
   _iTex(0),
-  _vtxColor(false), _vtxNormal(false), _iVtx(0)
+  _iVtx(0)
 {
   _tex.emplace_back(1, 1, &black); // make _iTex[0] valid always
 }
@@ -99,7 +99,7 @@ void RenderContext::drawVertex(const Vec3f &coord)
   }
   if (++_iVtx == 3) {
     // reset per vertex states
-    _iVtx = 0; _vtxNormal = _vtxColor = false;
+    _iVtx = 0;
     // face-culling / light correction
     Vec3f light = _light;
     // determine face normal

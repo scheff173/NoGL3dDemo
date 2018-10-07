@@ -50,7 +50,7 @@ The triangle vertex coordinates are transformed into view space by multiplying w
 
 **M<sub>MVP</sub>** = **M<sub>Projection</sub>** &middot; **M<sub>View</sub>** &middot; **M<sub>Model</sub>**
 
-**v'** = **M<sub>MVP</sub>** &middot; (**v**, 1)
+**v<sub>View</sub>** = **M<sub>MVP</sub>** &middot; (**v**, 1)
 
 The MVP matrix represents the model space &rarr; world space &rarr; view space transformation. I'd like to mention that using 4&times;4 matrices for transformations allows to concatenate transformations by multiplying their matrices. Finally, they can be applied to every vertex at once &ndash; a trick which is very common in 3d computer graphics.
 
@@ -60,7 +60,7 @@ The vertex coordinates which are 3d coordinates are converted to [homogeneous co
 
 After clipping away parts of the triangle which are outside of view space, the left triangle vertices are transformed into screen space.
 
-**v"** = **M<sub>Screen</sub> &middot **v'**
+**v<sub>Screen</sub>** = **M<sub>Screen</sub>** &middot; **v<sub>View</sub>**
 
 These transformations are similar to OpenGL. Song Ho Ahn published a nice introduction into this topic: [OpenGL Transformation](http://www.songho.ca/opengl/gl_transform.html).
 

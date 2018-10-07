@@ -46,11 +46,21 @@ The render callback may call the various methods to change internal states of th
 
 Each call of `RenderContext::drawVertex()` adds a vertex to an internal buffer. It collects vertices until 3 vertices are available to rasterize a triangle. With the 3<sup>rd</sup> vertex, the internal vertex buffer is processed with `RenderContext::rasterize()` and cleared afterwards.
 
-The triangle vertex coordinates are transformed into screen space by multiplying with the MVPS matrix.
+The triangle vertex coordinates are transformed into view space by multiplying with the MVP matrix.
 
-The MVPS matrix represents the model space &rarr; world space &rarr; view space &rarr; screen space transformation. I'd like to mention that using 4&times;4 matrices for transformations allows to concatenate transformations by multiplying their matrices. Finally, they can be applied to every vertex at once &ndash; a trick which is very common in 3d computer graphics.
+**M<sub>MVP</sub>** = **M<sub>Projection</sub>** &middot; **M<sub>View</sub>** &middot; **M<sub>Model</sub>**
+
+**v'** = **M<sub>MVP</sub>** &middot; (**v**, 1)
+
+The MVP matrix represents the model space &rarr; world space &rarr; view space transformation. I'd like to mention that using 4&times;4 matrices for transformations allows to concatenate transformations by multiplying their matrices. Finally, they can be applied to every vertex at once &ndash; a trick which is very common in 3d computer graphics.
+
+The vertex coordinates which are 3d coordinates are converted to [homogeneous coordinates](https://en.wikipedia.org/wiki/Homogeneous_coordinates#Use_in_computer_graphics_and_computer_vision) using them as 4d coordinates with 4<sup>th</sup> component w = 1. (Otherwise, multiplication with 4&times;4 matrix would not be possible.) After transformation, the 4d vector is converted back to a 3d vector.
 
 ![Transformations for coordinates to screen space](./Sketch-mat.png)
+
+After clipping away parts of the triangle which are outside of view space, the left triangle vertices are transformed into screen space.
+
+**v"** = **M<sub>Screen</sub> &middot **v'**
 
 These transformations are similar to OpenGL. Song Ho Ahn published a nice introduction into this topic: [OpenGL Transformation](http://www.songho.ca/opengl/gl_transform.html).
 
@@ -95,9 +105,23 @@ The fixed-pipe OpenGL engine supports additional lighting effects like:
 For now, I ignored this.
 I got the impression that the absence of these things hides quite good the weakness of Gouraud shading.
 
+### Clipping
+
+The clipping is applied to vertices to exclude parts of the triangle which are not inside the view frustum.
+
+The view space has the range [-1, 1] for x, y, and z direction. It can be described by six clip planes.
+
+Hence, the given triangle is clipped against all six clip planes in a loop. Thereby, the clipping may keep the original triangle, cut the triangle, or eliminate the triangle completely. In second case, the result of cutting might be a triangle or a quadrilateral. Quadrilaterals are split into two triangles.
+
+![Sketch of possible cases when clipping a triangle on plane](./sketch-clip.png)
+
+Hence, the clipping of a triangle may yield 0, 1, or 2 new triangles. As there are six clip planes, each clipping may duplicate the number of triangles. Finally, there might be 2<sup>6</sup> = 64 triangles.
+
+(I'm not sure whether the number of possible triangle isn't even lower. After thinking a while without success, I leave it as is. 64 is not that high and will appear at best in very special cases only.)
+
 ## Rasterizer
 
-When the rasterizer is called vertex coordinates are already transformed into screen space.
+When the rasterizer is called, vertex coordinates are already transformed into screen space.
 
 ### Interpolation of Coordinates
 

@@ -1,5 +1,6 @@
 #include <algorithm>
 
+#include "Plane.h"
 #include "RenderContext.h"
 
 namespace {
@@ -52,7 +53,7 @@ RenderContext::RenderContext(uint width, uint height):
   _ambient(0.2f),
   _mode(1 << FrontSide),
   _iTex(0),
-  _iVtx(0)
+  _nVtcs(0)
 {
   _tex.emplace_back(1, 1, &black); // make _iTex[0] valid always
 }
@@ -89,17 +90,16 @@ Vec4f lighting(
 
 void RenderContext::drawVertex(const Vec3f &coord)
 {
-  assert(_iVtx < 3);
-  { Vertex &vtx = _vtcs[_iVtx];
-    const Mat4x4f matMVPS
-      = _matScreen * _matProj * _matView * _matModel;
-    vtx.coord = transformPoint(matMVPS, coord);
+  assert(_nVtcs < 3);
+  { Vertex &vtx = _vtcs[_nVtcs];
+    const Mat4x4f matMVP
+      = _matProj * _matView * _matModel;
+    vtx.coord = transformPoint(matMVP, coord);
     vtx.normal = transformVec(_matModel, _normal);
     vtx.color = _color; vtx.texCoord = _texCoord;
   }
-  if (++_iVtx == 3) {
-    // reset per vertex states
-    _iVtx = 0;
+  if (++_nVtcs == 3) {
+    uint nVtcs = 3; _nVtcs = 0;
     // face-culling / light correction
     Vec3f light = _light;
     // determine face normal
@@ -107,13 +107,12 @@ void RenderContext::drawVertex(const Vec3f &coord)
       = cross(
         _vtcs[1].coord - _vtcs[0].coord,
         _vtcs[1].coord - _vtcs[2].coord);
-    if (normal.z < 0) { // view at back of face 
+    if (normal.z > 0) { // view at back of face 
       if (!isEnabled(BackSide)) return;
       light = -_light;
     } else { // view at front of face
       if (!isEnabled(FrontSide)) return;
     }
-    /// @todo frustum culling
     // lighting
     if (isEnabled(Lighting)) {
       _vtcs[0].color
@@ -123,9 +122,53 @@ void RenderContext::drawVertex(const Vec3f &coord)
       _vtcs[2].color
         = lighting(_vtcs[2].color, _vtcs[2].normal, light, _ambient);
     }
+    { // clipping
+      static const Planef clipPlanes[] = {
+        Planef(Vec3f(1.0f, 0.0f, 0.0f), 1.0f),
+        Planef(Vec3f(-1.0f, 0.0f, 0.0f), 1.0f),
+        Planef(Vec3f(0.0f, 1.0f, 0.0f), 1.0f),
+        Planef(Vec3f(0.0f, -1.0f, 0.0f), 1.0f),
+        Planef(Vec3f(0.0f, 0.0f, 1.0f), 1.0f),
+        Planef(Vec3f(0.0f, 0.0f, -1.0f), 1.0f)
+      };
+      for (const Planef &clipPlane : clipPlanes) {
+        uint nVtcsNew = nVtcs;
+        for (uint iVtx = 0; iVtx < nVtcs;) {
+          switch (clipTri(clipPlane, iVtx, nVtcsNew)) {
+            case 0: // triangle outside
+              if (nVtcsNew > nVtcs) {
+                _vtcs[iVtx + 0] = _vtcs[nVtcsNew - 3];
+                _vtcs[iVtx + 1] = _vtcs[nVtcsNew - 2];
+                _vtcs[iVtx + 2] = _vtcs[nVtcsNew - 1];
+                iVtx += 3;
+              } else {
+                _vtcs[iVtx + 0] = _vtcs[nVtcs - 3];
+                _vtcs[iVtx + 1] = _vtcs[nVtcs - 2];
+                _vtcs[iVtx + 2] = _vtcs[nVtcs - 1];
+                nVtcs -= 3;
+              }
+              nVtcsNew -= 3;
+              break;
+            case 1: // triangle inside
+              iVtx += 3;
+              break;
+            case 2: // triangle split
+              iVtx += 3;
+              nVtcsNew += 3;
+              break;
+            default: assert(("unreachable", false));
+          }
+        }
+        if ((nVtcs = nVtcsNew) == 0) break; // early out
+      }
+    }
+    // transform coordinates into screen space
+    for (uint iVtx = 0; iVtx < nVtcs; ++iVtx) {
+      Vertex &vtx = _vtcs[iVtx];
+      vtx.coord = transformPoint(_matScreen, vtx.coord);
+    }
     // call rasterize
-    typedef
-      void(RenderContext::*Rasterize)(const Vertex(&)[3]);
+    typedef void(RenderContext::*Rasterize)(uint);
     static const Rasterize rasterizes[] = {
       &RenderContext::rasterize<
         NoDepth, false, false, false>,
@@ -186,7 +229,7 @@ void RenderContext::drawVertex(const Vec3f &coord)
       ? DepthCheckAndWrite : DepthWrite : NoDepth;
     const uint i = (((tex * 2) + blend) * 2 + smooth) * 3 + depthMode;
     assert(i < N);
-    (this->*rasterizes[i])(_vtcs);
+    (this->*rasterizes[i])(nVtcs);
   }
 }
 
@@ -215,167 +258,242 @@ void RenderContext::clear(bool rgba, bool depth)
   if (depth) std::fill(_fb.depth.begin(), _fb.depth.end(), _depthClear);
 }
 
+RenderContext::Vertex RenderContext::lerpVtx(
+  const Vertex &vtx0, const Vertex &vtx1, float f1)
+{
+  const float f0 = 1.0f - f1;
+  return Vertex(
+    lerp(vtx0.coord, vtx1.coord, f0, f1),
+    Vec3f(Null), // normals not used in this specific case
+    isEnabled(Smooth)
+    ? lerp(vtx0.color, vtx1.color, f0, f1)
+    : vtx0.color,
+    lerp(vtx0.texCoord, vtx1.texCoord, f0, f1));
+}
+
+uint RenderContext::clipTri(const Planef &plane, uint iVtx0, uint iVtx3)
+{
+  const float d0 = -getSignDist(plane, _vtcs[iVtx0 + 0].coord);
+  const float d1 = -getSignDist(plane, _vtcs[iVtx0 + 1].coord);
+  const float d2 = -getSignDist(plane, _vtcs[iVtx0 + 2].coord);
+  switch ((d0 >= 0.0f) * 1 | (d1 >= 0.0f) * 2 | (d2 >= 0.0f) * 4) {
+    // all vertices outside:
+    case 0: return 0;
+    // cases with one vertex inside:
+    case 1:
+      _vtcs[iVtx0 + 1]
+        = lerpVtx(_vtcs[iVtx0 + 0], _vtcs[iVtx0 + 1], d0 / (d0 - d1));
+      _vtcs[iVtx0 + 2]
+        = lerpVtx(_vtcs[iVtx0 + 0], _vtcs[iVtx0 + 2], d0 / (d0 - d2));
+      return 1;
+    case 2:
+      _vtcs[iVtx0 + 0]
+        = lerpVtx(_vtcs[iVtx0 + 1], _vtcs[iVtx0 + 0], d1 / (d1 - d0));
+      _vtcs[iVtx0 + 2]
+        = lerpVtx(_vtcs[iVtx0 + 1], _vtcs[iVtx0 + 2], d1 / (d1 - d2));
+      return 1;
+    case 4:
+      _vtcs[iVtx0 + 0]
+        = lerpVtx(_vtcs[iVtx0 + 2], _vtcs[iVtx0 + 0], d2 / (d2 - d0));
+      _vtcs[iVtx0 + 1]
+        = lerpVtx(_vtcs[iVtx0 + 2], _vtcs[iVtx0 + 1], d2 / (d2 - d1));
+      return 1;
+    // cases with two vertices inside:
+    case 1 | 2:
+      _vtcs[iVtx3 + 0]
+        = lerpVtx(_vtcs[iVtx0 + 2], _vtcs[iVtx0 + 0], d2 / (d2 - d0));
+      _vtcs[iVtx3 + 1] =  _vtcs[iVtx0 + 1];
+      _vtcs[iVtx3 + 2]
+        = lerpVtx(_vtcs[iVtx0 + 2], _vtcs[iVtx0 + 1], d2 / (d2 - d1));
+      _vtcs[iVtx0 + 2] = _vtcs[iVtx3 + 0];
+      return 2;
+    case 1 | 4:
+      _vtcs[iVtx3 + 0] = _vtcs[iVtx0 + 0];
+      _vtcs[iVtx3 + 1]
+        = lerpVtx(_vtcs[iVtx0 + 1], _vtcs[iVtx0 + 0], d1 / (d1 - d0));
+      _vtcs[iVtx3 + 2]
+        = lerpVtx(_vtcs[iVtx0 + 1], _vtcs[iVtx0 + 2], d1 / (d1 - d2));
+      _vtcs[iVtx0 + 1] = _vtcs[iVtx3 + 2];
+      return 2;
+    case 2 | 4:
+      _vtcs[iVtx3 + 0]
+        = lerpVtx(_vtcs[iVtx0 + 0], _vtcs[iVtx0 + 2], d0 / (d0 - d2));
+      _vtcs[iVtx3 + 1]
+        = lerpVtx(_vtcs[iVtx0 + 0], _vtcs[iVtx0 + 1], d0 / (d0 - d1));
+      _vtcs[iVtx3 + 2] = _vtcs[iVtx0 + 2];
+      _vtcs[iVtx0 + 0] = _vtcs[iVtx3 + 1];
+      return 2;
+    // all vertices inside:
+    case 1 | 2 | 4: return 1;
+    // anything else is illegal
+    default: assert(("unreachable", false));
+  }
+  return (uint)-1;
+}
+
 template <
   RenderContext::DepthMode DEPTH_MODE,
   bool SMOOTH,
   bool BLEND,
   bool TEX>
-void RenderContext::rasterize(const Vertex (&vtcs)[3])
+void RenderContext::rasterize(uint nVtcs)
 {
-  Vec4f color = vtcs[0].color;
+  Vec4f color = _vtcs[0].color;
   uint32 rgba = color * (uint32)0xffffffff;
-  // sort vertices by y coordinates
-  uint iVtcs[3] = { 0, 1, 2 };
-  if (vtcs[iVtcs[0]].coord.y > vtcs[iVtcs[1]].coord.y) {
-    std::swap(iVtcs[0], iVtcs[1]);
-  }
-  if (vtcs[iVtcs[1]].coord.y > vtcs[iVtcs[2]].coord.y) {
-    std::swap(iVtcs[1], iVtcs[2]);
-  }
-  if (vtcs[iVtcs[0]].coord.y > vtcs[iVtcs[1]].coord.y) {
-    std::swap(iVtcs[0], iVtcs[1]);
-  }
-  // cut triangle in upper and lower part
-  const Vertex &vtxT = vtcs[iVtcs[0]];
-  const Vertex &vtxM = vtcs[iVtcs[1]];
-  const Vertex &vtxB = vtcs[iVtcs[2]];
-  if (std::abs(vtxB.coord.y - vtxT.coord.y) < 1E-10) return;
-  const float f1
-    = (vtxM.coord.y - vtxT.coord.y) / (vtxB.coord.y - vtxT.coord.y);
-  const float f0 = 1.0f - f1;
-  float xLM = vtxM.coord.x, xRM = lerp(vtxT.coord.x, vtxB.coord.x, f0, f1);
-  float zLM, zRM;
-  if (DEPTH_MODE > NoDepth) {
-    zLM = vtxM.coord.z, zRM = lerp(vtxT.coord.z, vtxB.coord.z, f0, f1);
-  }
-  Vec4f colorT, colorB, colorLM, colorRM;
-  if (SMOOTH) {
-    colorT = vtxT.color; colorB = vtxB.color;
-    colorLM = vtxM.color; colorRM = lerp(vtxT.color, vtxB.color, f0, f1);
-  }
-  Vec2f texCoordLM, texCoordRM;
-  if (TEX) {
-    texCoordLM = vtxM.texCoord;
-    texCoordRM = lerp(vtxT.texCoord, vtxB.texCoord, f0, f1);
-  }
-  if (xLM > xRM) {
-    std::swap(xLM, xRM); std::swap(zLM, zRM);
-    if (SMOOTH) std::swap(colorLM, colorRM);
-    if (TEX) std::swap(texCoordLM, texCoordRM);
-  }
-  const Texture &tex = _tex[_iTex];
-  const int yT = rnd(vtxT.coord.y);
-  const int yM = rnd(vtxM.coord.y);
-  const int yB = rnd(vtxB.coord.y);
-  // draw upper part of triangle
-  if (yT < yM) {
-    const float dY = vtxM.coord.y - vtxT.coord.y;
-    for (int y = std::max(yT, 0), yE = std::min(yM, (int)_height);
-      y < yE; ++y) {
-      const float f1 = (y - yT) / dY, f0 = 1.0f - f1;
-      const float xLY = lerp(vtxT.coord.x, xLM, f0, f1);
-      const float xRY = lerp(vtxT.coord.x, xRM, f0, f1);
-      const float dX = xRY - xLY;
-      const int xL = rnd(xLY), xR = rnd(xRY);
-      float zL, zR;
-      if (DEPTH_MODE > NoDepth) {
-        zL = lerp(vtxT.coord.z, zLM, f0, f1);
-        zR = lerp(vtxT.coord.z, zRM, f0, f1);
-      }
-      Vec4f colorL, colorR;
-      if (SMOOTH) {
-        colorL = lerp(colorT, colorLM, f0, f1);
-        colorR = lerp(colorT, colorRM, f0, f1);
-      }
-      Vec2f texCoordL, texCoordR;
-      if (TEX) {
-        texCoordL = lerp(vtxT.texCoord, texCoordLM, f0, f1);
-        texCoordR = lerp(vtxT.texCoord, texCoordRM, f0, f1);
-      }
-      const size_t i = y * _width;
-      for (int x = std::max(xL, 0), xE = std::min(xR, (int)_width);
-        x < xE; ++x) {
-        const size_t iX = i + x;
-        float f1, f0;
-        if (DEPTH_MODE > NoDepth || SMOOTH || TEX) {
-          f1 = (x - xL) / dX; f0 = 1.0f - f1;
-        }
+  for (uint iVtx = 0; iVtx < nVtcs; iVtx += 3) {
+    // sort vertices by y coordinates
+    uint iVtcs[3] = { iVtx + 0, iVtx + 1, iVtx + 2 };
+    if (_vtcs[iVtcs[0]].coord.y > _vtcs[iVtcs[1]].coord.y) {
+      std::swap(iVtcs[0], iVtcs[1]);
+    }
+    if (_vtcs[iVtcs[1]].coord.y > _vtcs[iVtcs[2]].coord.y) {
+      std::swap(iVtcs[1], iVtcs[2]);
+    }
+    if (_vtcs[iVtcs[0]].coord.y > _vtcs[iVtcs[1]].coord.y) {
+      std::swap(iVtcs[0], iVtcs[1]);
+    }
+    // cut triangle in upper and lower part
+    const Vertex &vtxT = _vtcs[iVtcs[0]];
+    const Vertex &vtxM = _vtcs[iVtcs[1]];
+    const Vertex &vtxB = _vtcs[iVtcs[2]];
+    if (std::abs(vtxB.coord.y - vtxT.coord.y) < 1E-10) return;
+    const float f1
+      = (vtxM.coord.y - vtxT.coord.y) / (vtxB.coord.y - vtxT.coord.y);
+    const float f0 = 1.0f - f1;
+    float xLM = vtxM.coord.x, xRM = lerp(vtxT.coord.x, vtxB.coord.x, f0, f1);
+    float zLM, zRM;
+    if (DEPTH_MODE > NoDepth) {
+      zLM = vtxM.coord.z, zRM = lerp(vtxT.coord.z, vtxB.coord.z, f0, f1);
+    }
+    Vec4f colorT, colorB, colorLM, colorRM;
+    if (SMOOTH) {
+      colorT = vtxT.color; colorB = vtxB.color;
+      colorLM = vtxM.color; colorRM = lerp(vtxT.color, vtxB.color, f0, f1);
+    }
+    Vec2f texCoordLM, texCoordRM;
+    if (TEX) {
+      texCoordLM = vtxM.texCoord;
+      texCoordRM = lerp(vtxT.texCoord, vtxB.texCoord, f0, f1);
+    }
+    if (xLM > xRM) {
+      std::swap(xLM, xRM); std::swap(zLM, zRM);
+      if (SMOOTH) std::swap(colorLM, colorRM);
+      if (TEX) std::swap(texCoordLM, texCoordRM);
+    }
+    const Texture &tex = _tex[_iTex];
+    const int yT = rnd(vtxT.coord.y);
+    const int yM = rnd(vtxM.coord.y);
+    const int yB = rnd(vtxB.coord.y);
+    // draw upper part of triangle
+    if (yT < yM) {
+      const float dY = vtxM.coord.y - vtxT.coord.y;
+      for (int y = std::max(yT, 0), yE = std::min(yM, (int)_height);
+        y < yE; ++y) {
+        const float f1 = (y - yT) / dY, f0 = 1.0f - f1;
+        const float xLY = lerp(vtxT.coord.x, xLM, f0, f1);
+        const float xRY = lerp(vtxT.coord.x, xRM, f0, f1);
+        const float dX = xRY - xLY;
+        const int xL = rnd(xLY), xR = rnd(xRY);
+        float zL, zR;
         if (DEPTH_MODE > NoDepth) {
-          const float z = lerp(zL, zR, f0, f1);
-          if (DEPTH_MODE == DepthCheckAndWrite
-            && z >= _fb.depth[iX]) continue;
-          _fb.depth[iX] = z;
+          zL = lerp(vtxT.coord.z, zLM, f0, f1);
+          zR = lerp(vtxT.coord.z, zRM, f0, f1);
         }
+        Vec4f colorL, colorR;
         if (SMOOTH) {
-          color = f0 * colorL + f1 * colorR;
+          colorL = lerp(colorT, colorLM, f0, f1);
+          colorR = lerp(colorT, colorRM, f0, f1);
         }
+        Vec2f texCoordL, texCoordR;
         if (TEX) {
-          const Vec2f texCoord = f0 * texCoordL + f1 * texCoordR;
-          rgba = color * tex[texCoord];
-        } else rgba = color * (uint32)0xffffffff;
-        if (BLEND) {
-          const float f1 = ((rgba >> 24) & 0xff) * 1.0f / 255;
-          const float f0 = 1.0f - f1;
-          const Vec4f blendFg(f1, f1, f1, f1), blendBg(f0, f0, f0, f0);
-          rgba = blendFg * rgba + blendBg * _fb.rgba[iX];
-        } else rgba |= 0xff000000;
-        _fb.rgba[iX] = rgba;
+          texCoordL = lerp(vtxT.texCoord, texCoordLM, f0, f1);
+          texCoordR = lerp(vtxT.texCoord, texCoordRM, f0, f1);
+        }
+        const size_t i = y * _width;
+        for (int x = std::max(xL, 0), xE = std::min(xR, (int)_width);
+          x < xE; ++x) {
+          const size_t iX = i + x;
+          float f1, f0;
+          if (DEPTH_MODE > NoDepth || SMOOTH || TEX) {
+            f1 = (x - xL) / dX; f0 = 1.0f - f1;
+          }
+          if (DEPTH_MODE > NoDepth) {
+            const float z = lerp(zL, zR, f0, f1);
+            if (DEPTH_MODE == DepthCheckAndWrite
+              && z >= _fb.depth[iX]) continue;
+            _fb.depth[iX] = z;
+          }
+          if (SMOOTH) {
+            color = f0 * colorL + f1 * colorR;
+          }
+          if (TEX) {
+            const Vec2f texCoord = f0 * texCoordL + f1 * texCoordR;
+            rgba = color * tex[texCoord];
+          } else rgba = color * (uint32)0xffffffff;
+          if (BLEND) {
+            const float f1 = ((rgba >> 24) & 0xff) * 1.0f / 255;
+            const float f0 = 1.0f - f1;
+            const Vec4f blendFg(f1, f1, f1, f1), blendBg(f0, f0, f0, f0);
+            rgba = blendFg * rgba + blendBg * _fb.rgba[iX];
+          } else rgba |= 0xff000000;
+          _fb.rgba[iX] = rgba;
+        }
       }
     }
-  }
-  // draw lower part of triangle
-  if (yM < yB) {
-    const float dY = vtxB.coord.y - vtxM.coord.y;
-    for (int y = std::max(yM, 0), yE = std::min(yB, (int)_height);
-      y < yE; ++y) {
-      const float f1 = (y - yM) / dY, f0 = 1.0f - f1;
-      const float xLY = lerp(xLM, vtxB.coord.x, f0, f1);
-      const float xRY = lerp(xRM, vtxB.coord.x, f0, f1);
-      const float dX = xRY - xLY;
-      const int xL = rnd(xLY), xR = rnd(xRY);
-      float zL, zR;
-      if (DEPTH_MODE > NoDepth) {
-        zL = lerp(zLM, vtxB.coord.z, f0, f1);
-        zR = lerp(zRM, vtxB.coord.z, f0, f1);
-      }
-      Vec4f colorL, colorR;
-      if (SMOOTH) {
-        colorL = lerp(colorLM, colorB, f0, f1);
-        colorR = lerp(colorRM, colorB, f0, f1);
-      }
-      Vec2f texCoordL, texCoordR;
-      if (TEX) {
-        texCoordL = lerp(texCoordLM, vtxB.texCoord, f0, f1);
-        texCoordR = lerp(texCoordRM, vtxB.texCoord, f0, f1);
-      }
-      const size_t i = y * _width;
-      for (int x = std::max(xL, 0), xE = std::min(xR, (int)_width);
-        x < xE; ++x) {
-        const size_t iX = i + x;
-        float f1, f0;
-        if (DEPTH_MODE > NoDepth || SMOOTH || TEX) {
-          f1 = (x - xL) / dX; f0 = 1.0f - f1;
-        }
+    // draw lower part of triangle
+    if (yM < yB) {
+      const float dY = vtxB.coord.y - vtxM.coord.y;
+      for (int y = std::max(yM, 0), yE = std::min(yB, (int)_height);
+        y < yE; ++y) {
+        const float f1 = (y - yM) / dY, f0 = 1.0f - f1;
+        const float xLY = lerp(xLM, vtxB.coord.x, f0, f1);
+        const float xRY = lerp(xRM, vtxB.coord.x, f0, f1);
+        const float dX = xRY - xLY;
+        const int xL = rnd(xLY), xR = rnd(xRY);
+        float zL, zR;
         if (DEPTH_MODE > NoDepth) {
-          const float z = lerp(zL, zR, f0, f1);
-          if (DEPTH_MODE == DepthCheckAndWrite
-            && z >= _fb.depth[iX]) continue;
-          _fb.depth[iX] = z;
+          zL = lerp(zLM, vtxB.coord.z, f0, f1);
+          zR = lerp(zRM, vtxB.coord.z, f0, f1);
         }
+        Vec4f colorL, colorR;
         if (SMOOTH) {
-          color = f0 * colorL + f1 * colorR;
+          colorL = lerp(colorLM, colorB, f0, f1);
+          colorR = lerp(colorRM, colorB, f0, f1);
         }
+        Vec2f texCoordL, texCoordR;
         if (TEX) {
-          const Vec2f texCoord = f0 * texCoordL + f1 * texCoordR;
-          rgba = color * tex[texCoord];
-        } else rgba = color * (uint32)0xffffffff;
-        if (BLEND) {
-          const float f1 = ((rgba >> 24) & 0xff) * 1.0f / 255;
-          const float f0 = 1.0f - f1;
-          const Vec4f blendFg(f1, f1, f1, f1), blendBg(f0, f0, f0, f0);
-          rgba = blendFg * rgba + blendBg * _fb.rgba[iX];
-        } else rgba |= 0xff000000;
-        _fb.rgba[iX] = rgba;
+          texCoordL = lerp(texCoordLM, vtxB.texCoord, f0, f1);
+          texCoordR = lerp(texCoordRM, vtxB.texCoord, f0, f1);
+        }
+        const size_t i = y * _width;
+        for (int x = std::max(xL, 0), xE = std::min(xR, (int)_width);
+          x < xE; ++x) {
+          const size_t iX = i + x;
+          float f1, f0;
+          if (DEPTH_MODE > NoDepth || SMOOTH || TEX) {
+            f1 = (x - xL) / dX; f0 = 1.0f - f1;
+          }
+          if (DEPTH_MODE > NoDepth) {
+            const float z = lerp(zL, zR, f0, f1);
+            if (DEPTH_MODE == DepthCheckAndWrite
+              && z >= _fb.depth[iX]) continue;
+            _fb.depth[iX] = z;
+          }
+          if (SMOOTH) {
+            color = f0 * colorL + f1 * colorR;
+          }
+          if (TEX) {
+            const Vec2f texCoord = f0 * texCoordL + f1 * texCoordR;
+            rgba = color * tex[texCoord];
+          } else rgba = color * (uint32)0xffffffff;
+          if (BLEND) {
+            const float f1 = ((rgba >> 24) & 0xff) * 1.0f / 255;
+            const float f0 = 1.0f - f1;
+            const Vec4f blendFg(f1, f1, f1, f1), blendBg(f0, f0, f0, f0);
+            rgba = blendFg * rgba + blendBg * _fb.rgba[iX];
+          } else rgba |= 0xff000000;
+          _fb.rgba[iX] = rgba;
+        }
       }
     }
   }

@@ -12,10 +12,9 @@
 
 // own header:
 #include "linmath.h"
+#include "Plane.h"
 #include "Texture.h"
 #include "util.h"
-
-/// @todo clip space culling
 
 /** provides a class for the 3d render context.
  *
@@ -57,6 +56,21 @@ class RenderContext {
       Vec3f normal; ///< vertex normal
       Vec4f color; ///< vertex color
       Vec2f texCoord; ///< texture coordinates associated to vertex
+
+      /// default constructor (leaving instance uninitialized)
+      Vertex() { }
+      /// constructor with values.
+      Vertex(
+        const Vec3f &coord, const Vec3f &normal, const Vec4f &color,
+        const Vec2f &texCoord):
+        coord(coord), normal(normal), color(color), texCoord(texCoord)
+      { }
+      /// copy constructor.
+      Vertex(const Vertex&) = default;
+      /// copy assignment.
+      Vertex& operator=(const Vertex&) = default;
+      /// destructor.
+      ~Vertex() = default;
     };
 
   // variables:
@@ -108,10 +122,15 @@ class RenderContext {
     uint _iTex;
     /// loaded textures
     std::vector<Texture> _tex;
-    /// vertices of triangle to rasterize
-    Vertex _vtcs[3];
-    uint _iVtx;
-
+    /** vertices of triangles to rasterize
+     *
+     * The rendering produces 3 vertices.
+     * The clipping on all 6 planes of clip space may split them into up to
+     * 2^6 triangles.
+     */
+    Vertex _vtcs[3 * (1 << 6)];
+    /// number of accumulated vertices
+    uint _nVtcs;
     /// render callback
     std::function<void(RenderContext&)> _cbRender;
 
@@ -326,14 +345,30 @@ class RenderContext {
      */
     uint setTex(uint i);
 
+    /** sets clear color.
+     *
+     * @param color clear color
+     */
     void setClearColor(const Vec4f &color);
+
+    /** clears frame buffer(s).
+     *
+     * @param rgba flag: true ... clear color buffer
+     * @param depth flag: true ... clear depth buffer
+     */
     void clear(bool rgba, bool depth);
 
+    /** sets render callback.
+     *
+     * @param cbRender the render callback
+     */
     void setRenderCallback(std::function<void(RenderContext&)> &&cbRender)
     {
       _cbRender = cbRender;
     }
 
+    /** calls render callback.
+     */
     void render() { _cbRender(*this); }
 
     /** returns the start address of RGBA frame buffer.
@@ -348,6 +383,33 @@ class RenderContext {
   private:
     /// @name Internal Stuff
     //@{
+
+    /** interpolates all components of a vertex between two vertices
+     * according to a factor.
+     *
+     * @param vtx0 1st vertex
+     * @param vtx1 2nd vertex
+     * @param f interpolation factor in range [0, 1]
+     * @return interpolated vertex
+     */
+    Vertex lerpVtx(
+      const Vertex &vtx0, const Vertex &vtx1, float f);
+
+    /** clips a triangle on a certain plane.
+     *
+     * @param plane the plane to clip triangle on
+     * @param iVtx0 start index of triangle vertices to clip
+     * @param iVtx3 start index of 2nd triangle
+     *        which might be created in certain clipping cases
+     * @return number of resulting triangles\n
+     *         0 ... triangle completely below clipping plane,
+     *               triangle at @a iVtx0 should be discarded\n
+     *         1 ... 1 triangle (might have been clipped)
+     *               stored at @a iVtx0\n
+     *         2 ... 2 triangles stored at @a iVtx0 and @a iVtx3
+     */
+    uint clipTri(const Planef &plane, uint iVtx0, uint iVtx3);
+
     /** returns frame buffer index for a certain row.
      *
      * @param y index of row
@@ -363,22 +425,22 @@ class RenderContext {
      */
     uint getFBI(uint x, uint y) const { return y * _width + x; }
 
-    /** rasterizes one triangle.
+    /** rasterizes triangles.
      *
      * @tparam DEPTH_MODE the depth mode
      * @tparam SMOOTH flag: true ... enable color interpolation
      * @tparam BLEND flag: true ... enable alpha blending
      * @tparam TEX flag: true ... enable texture sampling
      *
-     * @param vtcs the vertices of triangle to rasterize\n
-     *        This vertices are expected in screen space.
+     * @param nVtcs number of vertices for triangles to rasterize\n
+     *        These vertices are expected to be in screen space.
      */
     template <
       DepthMode DEPTH_MODE,
       bool SMOOTH,
       bool BLEND,
       bool TEX>
-    void rasterize(const Vertex (&vtcs)[3]);
+    void rasterize(uint nVtcs);
 
     //@}
 };

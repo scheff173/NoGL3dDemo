@@ -113,7 +113,7 @@ The view space has the range [-1, 1] for x, y, and z direction. It can be descri
 
 Hence, the given triangle is clipped against all six clip planes in a loop. Thereby, the clipping may keep the original triangle, cut the triangle, or eliminate the triangle completely. In second case, the result of cutting might be a triangle or a quadrilateral. Quadrilaterals are split into two triangles.
 
-![Sketch of possible cases when clipping a triangle on plane](./sketch-clip.png)
+![Sketch of possible cases when clipping a triangle on plane](./Sketch-clip.png)
 
 Hence, the clipping of a triangle may yield 0, 1, or 2 new triangles. As there are six clip planes, each clipping may duplicate the number of triangles. Finally, there might be 2<sup>6</sup> = 64 triangles.
 
